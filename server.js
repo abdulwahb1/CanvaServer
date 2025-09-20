@@ -26,15 +26,6 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// Health check endpoint
-app.get("/health", (req, res) => {
-  res.json({
-    status: "OK",
-    message: "Canva Template API is running",
-    timestamp: new Date().toISOString(),
-  });
-});
-
 // OAuth callback endpoint
 app.get("/callback", async (req, res) => {
   try {
@@ -128,14 +119,167 @@ app.get("/api/auth/canva", async (req, res) => {
   }
 });
 
-// Test endpoint for development
-app.post("/api/test", (req, res) => {
-  res.json({
-    success: true,
-    message: "API is working correctly",
-    receivedData: req.body,
-    timestamp: new Date().toISOString(),
-  });
+// Function to upload thumbnail to Cloudinary
+async function uploadThumbnailToCloudinary(thumbnailUrl, templateId) {
+  try {
+    console.log("Uploading thumbnail to Cloudinary:", thumbnailUrl);
+
+    const result = await cloudinary.uploader.upload(thumbnailUrl, {
+      folder: "canva-thumbnails",
+      public_id: `thumbnail_${templateId}_${Date.now()}`,
+      tags: ["canva", "thumbnail", "autofill"],
+      transformation: [
+        { width: 1080, height: 1080, crop: "fit" },
+        { quality: "auto" },
+      ],
+    });
+
+    console.log("Thumbnail uploaded successfully:", result.public_id);
+    return result;
+  } catch (error) {
+    console.error("Cloudinary upload error:", error);
+    throw error;
+  }
+}
+
+// Canva Autofill API endpoint
+app.post("/api/canva/autofill", async (req, res) => {
+  try {
+    const { brand_template_id, data } = req.body;
+
+    // Validate required fields
+    if (!brand_template_id || !data) {
+      return res.status(400).json({
+        success: false,
+        error:
+          "Missing required fields: brand_template_id and data are required",
+      });
+    }
+
+    // Get valid access token
+    let token;
+    try {
+      token = await auth.getValidToken();
+    } catch (error) {
+      return res.status(401).json({
+        success: false,
+        error: "Authentication required: " + error.message,
+      });
+    }
+
+    console.log("Generating Canva autofill with template:", brand_template_id);
+
+    // Call Canva Autofill API
+    const canvaResponse = await axios.post(
+      "https://api.canva.com/rest/v1/autofills",
+      {
+        brand_template_id: brand_template_id,
+        data: data,
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        timeout: 30000, // 30 second timeout
+      }
+    );
+
+    console.log("Canva autofill job created:", canvaResponse.data.job.id);
+
+    // Poll job status until completion
+    const jobId = canvaResponse.data.job.id;
+    let jobStatus = "in_progress";
+    let attempts = 0;
+    const maxAttempts = 30; // 30 attempts with 2 second intervals = 1 minute max
+
+    while (jobStatus === "in_progress" && attempts < maxAttempts) {
+      await new Promise((resolve) => setTimeout(resolve, 2000)); // Wait 2 seconds
+      attempts++;
+
+      try {
+        const statusResponse = await axios.get(
+          `https://api.canva.com/rest/v1/autofills/${jobId}`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+            timeout: 30000,
+          }
+        );
+
+        jobStatus = statusResponse.data.job.status;
+        console.log(`Job ${jobId} status: ${jobStatus} (attempt ${attempts})`);
+
+        if (jobStatus === "success") {
+          const designUrl = statusResponse.data.job.result.design.url;
+          const thumbnailUrl =
+            statusResponse.data.job.result.design.thumbnail.url;
+
+          try {
+            // Upload thumbnail to Cloudinary
+            const cloudinaryResult = await uploadThumbnailToCloudinary(
+              thumbnailUrl,
+              brand_template_id
+            );
+
+            return res.json({
+              success: true,
+              job_id: jobId,
+              status: "success",
+              design_url: designUrl,
+              thumbnail_url: thumbnailUrl,
+              cloudinary_url: cloudinaryResult.secure_url,
+              public_id: cloudinaryResult.public_id,
+              template_id: brand_template_id,
+              attempts: attempts,
+              timestamp: new Date().toISOString(),
+            });
+          } catch (uploadError) {
+            console.error("Cloudinary upload failed:", uploadError);
+            // Return without Cloudinary URL if upload fails
+            return res.json({
+              success: true,
+              job_id: jobId,
+              status: "success",
+              design_url: designUrl,
+              thumbnail_url: thumbnailUrl,
+              cloudinary_url: null,
+              error: "Thumbnail upload to Cloudinary failed",
+              template_id: brand_template_id,
+              attempts: attempts,
+              timestamp: new Date().toISOString(),
+            });
+          }
+        }
+      } catch (error) {
+        console.error("Error checking job status:", error.message);
+        break;
+      }
+    }
+
+    // If job didn't complete in time
+    res.json({
+      success: false,
+      job_id: jobId,
+      status: jobStatus,
+      error: "Job did not complete within timeout period",
+      attempts: attempts,
+      template_id: brand_template_id,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error(
+      "Canva autofill error:",
+      error.response?.data || error.message
+    );
+    res.status(500).json({
+      success: false,
+      error: "Failed to generate Canva autofill",
+      details: error.response?.data || error.message,
+    });
+  }
 });
 
 // Start server
