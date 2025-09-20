@@ -36,11 +36,8 @@ Softr can now call the simple API endpoint:
 ```json
 {
   "template_id": "your_canva_template_id",
-  "text_data": {
-    "TITLE": "Your Title Here",
-    "SUBTITLE": "Your Subtitle",
-    "DESCRIPTION": "Your description text"
-  }
+  "title": "Your Title Here",
+  "description": "Your description text"
 }
 ```
 
@@ -77,11 +74,8 @@ In Softr, create a **Custom Action** with:
   ```json
   {
     "template_id": "{{Template ID}}",
-    "text_data": {
-      "TITLE": "{{Title Field}}",
-      "SUBTITLE": "{{Subtitle Field}}",
-      "DESCRIPTION": "{{Description Field}}"
-    }
+    "title": "{{Title Field}}",
+    "description": "{{Description Field}}"
   }
   ```
 
@@ -104,10 +98,8 @@ curl -X POST http://127.0.0.1:3000/api/generate-image \
   -H "Content-Type: application/json" \
   -d '{
     "template_id": "your_template_id",
-    "text_data": {
-      "TITLE": "Test Title",
-      "SUBTITLE": "Test Subtitle"
-    }
+    "title": "Test Title",
+    "description": "Test Description"
   }'
 ```
 
@@ -119,7 +111,7 @@ curl -X POST http://127.0.0.1:3000/api/generate-image \
 curl http://127.0.0.1:3000/api/generate-image \
   -X POST \
   -H "Content-Type: application/json" \
-  -d '{"template_id":"test","text_data":{"TITLE":"test"}}'
+  -d '{"template_id":"test","title":"test","description":"test"}'
 ```
 
 If you get a 401 error, you need to authenticate first.

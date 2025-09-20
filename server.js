@@ -145,14 +145,14 @@ async function uploadThumbnailToCloudinary(thumbnailUrl, templateId) {
 // Canva Autofill API endpoint
 app.post("/api/canva/autofill", async (req, res) => {
   try {
-    const { brand_template_id, data } = req.body;
+    const { template_id, title, description } = req.body;
 
     // Validate required fields
-    if (!brand_template_id || !data) {
+    if (!template_id || !title || !description) {
       return res.status(400).json({
         success: false,
         error:
-          "Missing required fields: brand_template_id and data are required",
+          "Missing required fields: template_id, title, and description are required",
       });
     }
 
@@ -167,14 +167,26 @@ app.post("/api/canva/autofill", async (req, res) => {
       });
     }
 
-    console.log("Generating Canva autofill with template:", brand_template_id);
+    // Map individual fields to Canva template placeholders
+    const canvaData = {
+      TITLE: {
+        type: "text",
+        text: title,
+      },
+      DESCRIPTION: {
+        type: "text",
+        text: description,
+      },
+    };
+
+    console.log("Generating Canva autofill with template:", template_id);
 
     // Call Canva Autofill API
     const canvaResponse = await axios.post(
       "https://api.canva.com/rest/v1/autofills",
       {
-        brand_template_id: brand_template_id,
-        data: data,
+        brand_template_id: template_id,
+        data: canvaData,
       },
       {
         headers: {
@@ -221,7 +233,7 @@ app.post("/api/canva/autofill", async (req, res) => {
             // Upload thumbnail to Cloudinary
             const cloudinaryResult = await uploadThumbnailToCloudinary(
               thumbnailUrl,
-              brand_template_id
+              template_id
             );
 
             return res.json({
@@ -232,7 +244,7 @@ app.post("/api/canva/autofill", async (req, res) => {
               thumbnail_url: thumbnailUrl,
               cloudinary_url: cloudinaryResult.secure_url,
               public_id: cloudinaryResult.public_id,
-              template_id: brand_template_id,
+              template_id: template_id,
               attempts: attempts,
               timestamp: new Date().toISOString(),
             });
@@ -247,7 +259,7 @@ app.post("/api/canva/autofill", async (req, res) => {
               thumbnail_url: thumbnailUrl,
               cloudinary_url: null,
               error: "Thumbnail upload to Cloudinary failed",
-              template_id: brand_template_id,
+              template_id: template_id,
               attempts: attempts,
               timestamp: new Date().toISOString(),
             });
@@ -266,7 +278,7 @@ app.post("/api/canva/autofill", async (req, res) => {
       status: jobStatus,
       error: "Job did not complete within timeout period",
       attempts: attempts,
-      template_id: brand_template_id,
+      template_id: template_id,
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
@@ -285,14 +297,14 @@ app.post("/api/canva/autofill", async (req, res) => {
 // Simple API endpoint for Softr integration
 app.post("/api/generate-image", async (req, res) => {
   try {
-    const { template_id, text_data } = req.body;
+    const { template_id, title, description } = req.body;
 
     // Validate input
-    if (!template_id || !text_data) {
+    if (!template_id || !description || !title) {
       return res.status(400).json({
         success: false,
         error:
-          "Missing required fields: template_id and text_data are required",
+          "Missing required fields: template_id, title, and description are required",
       });
     }
 
@@ -310,13 +322,17 @@ app.post("/api/generate-image", async (req, res) => {
     }
 
     // Prepare data for Canva autofill
-    const canvaData = {};
-    Object.keys(text_data).forEach((key) => {
-      canvaData[key] = {
+    // Map individual fields to Canva template placeholders
+    const canvaData = {
+      TITLE: {
         type: "text",
-        text: text_data[key],
-      };
-    });
+        text: title,
+      },
+      DESCRIPTION: {
+        type: "text",
+        text: description,
+      },
+    };
 
     console.log("Generating Canva autofill with template:", template_id);
 
